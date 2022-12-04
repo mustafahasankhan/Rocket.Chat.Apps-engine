@@ -76,6 +76,17 @@ export class OAuth2Client implements IOAuth2Client {
                 packageValue: '',
                 i18nLabel: `${this.config.alias}-oauth-client-secret`,
             }),
+
+            configuration.settings.provideSetting({
+                id: `${this.config.alias}-xwww`,
+                type: SettingType.BOOLEAN,
+                value: false,
+                public: true,
+                required: false,
+                packageValue: '',
+                i18nLabel: `Enable x-www-form-urlencoded body params in OAuth2 requests.`,
+            }),
+
         ]);
     }
 
@@ -162,6 +173,12 @@ export class OAuth2Client implements IOAuth2Client {
                 .getSettings()
                 .getValueById(`${this.config.alias}-oauth-clientsecret`);
 
+            const xwww = await this.app
+            .getAccessors()
+            .reader.getEnvironmentReader()
+            .getSettings()
+            .getValueById(`${this.config.alias}-xwww`);
+
             const siteUrl = await this.getBaseURLWithoutTrailingSlash();
 
             const redirectUri = this.app
@@ -176,7 +193,26 @@ export class OAuth2Client implements IOAuth2Client {
             url.searchParams.set('refresh_token', tokenInfo.refreshToken);
             url.searchParams.set('grant_type', GrantType.RefreshToken);
 
-            const { content, statusCode } = await this.app.getAccessors().http.post(url.href);
+            let body;
+            let options;
+            if (xwww) {
+                body = `client_id=${clientId}`;
+                body += `&scope=${this.config.defaultScopes.join(' ')}`;
+                body += `&refresh_token=${tokenInfo.refreshToken}`;
+                body += `&redirect_uri=${redirectUri}`;
+                body += `&grant_type=${GrantType.RefreshToken}`;
+                body += `&client_secret=${clientSecret}`;
+                body = encodeURI(body);
+                options = {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    content: body,
+                };
+            } else {
+                options = {};
+            }
+            const { content, statusCode } = await this.app.getAccessors().http.post(url.href, options);
 
             if (statusCode !== 200) {
                 throw new Error('Request to provider was unsuccessful. Check logs for more information');
@@ -210,6 +246,12 @@ export class OAuth2Client implements IOAuth2Client {
         try {
             const tokenInfo = await this.getAccessTokenForUser(user);
 
+            const xwww = await this.app
+            .getAccessors()
+            .reader.getEnvironmentReader()
+            .getSettings()
+            .getValueById(`${this.config.alias}-xwww`);
+
             if (!tokenInfo?.token) {
                 throw new Error('No access token available for this user.');
             }
@@ -218,7 +260,21 @@ export class OAuth2Client implements IOAuth2Client {
 
             url.searchParams.set('token', tokenInfo?.token);
 
-            const result = await this.app.getAccessors().http.post(url.href);
+            let body;
+            let options;
+            if (xwww) {
+                body = `token=${tokenInfo.token}`;
+                body = encodeURI(body);
+                options = {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    content: body,
+                };
+            } else {
+                options = {};
+            }
+            const result = await this.app.getAccessors().http.post(url.href, options);
 
             if (result.statusCode !== 200) {
                 throw new Error('Provider did not allow token to be revoked');
@@ -306,6 +362,12 @@ export class OAuth2Client implements IOAuth2Client {
                 .getSettings()
                 .getValueById(`${this.config.alias}-oauth-clientsecret`);
 
+            const xwww = await this.app
+                .getAccessors()
+                .reader.getEnvironmentReader()
+                .getSettings()
+                .getValueById(`${this.config.alias}-xwww`);
+
             const url = new URL(accessTokenUrl, siteUrl);
 
             url.searchParams.set('client_id', clientId);
@@ -315,9 +377,28 @@ export class OAuth2Client implements IOAuth2Client {
             url.searchParams.set('access_type', 'offline');
             url.searchParams.set('grant_type', GrantType.AuthorizationCode);
 
-            const { content, statusCode } = await http.post(url.href, {
+            let body;
+            let options;
+            if (xwww) {
+                body = `client_id=${clientId}`;
+                body += `&scope=${this.config.defaultScopes.join(' ')}`;
+                body += `&code=${code}`;
+                body += `&redirect_uri=${redirectUri}`;
+                body += `&grant_type=${GrantType.AuthorizationCode}`;
+                body += `&client_secret=${clientSecret}`;
+                body = encodeURI(body);
+                options = {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    content: body,
+                };
+            } else {
+            options = {
                 headers: { Accept: 'application/json' },
-            });
+                };
+            }
+            const { content, statusCode } = await this.app.getAccessors().http.post(url.href, options);
 
             // If provider had a server error, nothing we can do
             if (statusCode >= 500) {
